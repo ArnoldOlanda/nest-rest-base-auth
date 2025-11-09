@@ -14,11 +14,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PasswordResetToken } from './entities/passwordResetToken.entity';
+import { EmailVerification } from './entities/emailVerification.entity';
+import { EmailVerificationService } from './emailVerification.service';
 
 @Module({
     imports: [
         PassportModule.register({ defaultStrategy: 'jwt' }),
-        TypeOrmModule.forFeature([User, Role, Permission, PasswordResetToken]),
+        TypeOrmModule.forFeature([User, Role, Permission, PasswordResetToken, EmailVerification]),
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],
@@ -30,7 +32,7 @@ import { PasswordResetToken } from './entities/passwordResetToken.entity';
         }),
     ],
     controllers: [AuthController, RoleController, PermissionController],
-    providers: [AuthService, JwtStrategy, RoleService, PermissionService],
+    providers: [AuthService, JwtStrategy, RoleService, PermissionService, EmailVerificationService],
     exports: [JwtStrategy],
 })
 export class AuthModule {}

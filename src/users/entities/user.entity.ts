@@ -1,5 +1,6 @@
+import { EmailVerification } from "src/auth/entities/emailVerification.entity";
 import { Role } from "src/auth/entities/role.entity";
-import { BeforeInsert, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinTable, ManyToMany, PrimaryColumn, UpdateDateColumn } from "typeorm";
+import { BeforeInsert, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinTable, ManyToMany, OneToMany, PrimaryColumn, UpdateDateColumn } from "typeorm";
 import {v4 as uuid} from 'uuid'
 
 @Entity('users')
@@ -23,7 +24,10 @@ export class User {
     @JoinTable()
     roles: Role[];
 
-    @Column({type: 'boolean', default: true})
+    @OneToMany(()=>EmailVerification, emailVerification => emailVerification.user)
+    emailVerifications: EmailVerification[];
+
+    @Column({type: 'boolean', default: false})
     isActive: boolean;
 
     @Column({type: 'boolean', default: false})

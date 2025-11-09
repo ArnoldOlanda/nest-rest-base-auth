@@ -12,13 +12,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
-import { encryptPassword, verifyPassword } from 'src/utils';
+import { encryptText, verifyEncryptedText } from 'src/utils';
 import { JwtPayload } from './interfaces';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { MailerService } from '@nestjs-modules/mailer';
 import { PasswordResetToken } from './entities/passwordResetToken.entity';
+import { EmailVerificationService } from './emailVerification.service';
+import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
 export class AuthService {
@@ -29,6 +31,7 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(PasswordResetToken)
     private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
+    private readonly emailVerificationService: EmailVerificationService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private readonly mailerService: MailerService,
@@ -36,14 +39,21 @@ export class AuthService {
 
   async login(res: Response, data: LoginDto) {
     try {
-      const user = await this.userRepository.findOneBy({ email: data.email });
+      const user = await this.userRepository.findOneBy({
+        email: data.email,
+      });
       if (!user) {
         throw new NotFoundException('User not found');
       }
 
-      const checkPassword = verifyPassword(data.password, user.password);
-      if (!checkPassword)
+      if (!user.isActive) {
+        throw new UnauthorizedException('User account is not active');
+      }
+
+      const checkPassword = verifyEncryptedText(data.password, user.password);
+      if (!checkPassword) {
         throw new UnauthorizedException('Invalid credentials');
+      }
 
       const payload: JwtPayload = {
         id: user.id,
@@ -70,7 +80,7 @@ export class AuthService {
         },
       });
     } catch (error) {
-      if(error instanceof HttpException){
+      if (error instanceof HttpException) {
         throw error;
       }
       this.logger.error('Error during login', error);
@@ -78,13 +88,112 @@ export class AuthService {
     }
   }
 
-  private generateToken(payload: { id: string }) {
-    return this.jwtService.sign(payload);
+  async register(registerDto: RegisterDto) {
+    try {
+      const { name, email, password } = registerDto;
+
+      // Verificar si el usuario ya existe
+      const existingUser = await this.userRepository.findOneBy({ email });
+      if (existingUser) {
+        throw new BadRequestException('El usuario ya está registrado');
+      }
+
+      // Crear usuario inactivo
+      const encryptedPassword = encryptText(password);
+      const user = this.userRepository.create({
+        email,
+        password: encryptedPassword,
+        name,
+      });
+      await this.userRepository.save(user);
+
+      // Generar token de activación
+      const token = crypto.randomUUID();
+
+      await this.emailVerificationService.create({ user, token });
+
+      // Enviar correo de activación
+      const activationUrl = this.generateActivationUrl(token);
+
+      await this.sendEmailVerification(email, name, activationUrl);
+
+      return {
+        message:
+          'Usuario registrado exitosamente. Revisa tu correo para activar tu cuenta.',
+        user,
+      };
+    } catch (error) {
+      this.logger.error('Error al registrar usuario', error);
+      if(error instanceof HttpException){
+        throw error;
+      }
+      throw new InternalServerErrorException('Error al registrar usuario');
+    }
+  }
+
+  async activateAccount(token: string) {
+    try {
+      const emailVerification =
+        await this.emailVerificationService.findAndValidateToken(token);
+
+      if (!emailVerification) {
+        throw new BadRequestException('Token de activación expirado o inválido');
+      }
+
+      emailVerification.user.isActive = true;
+
+      await this.userRepository.save(emailVerification.user);
+
+      await this.emailVerificationService.markAsUsed(emailVerification.id);
+
+      return emailVerification.user;
+    } catch (error) {
+      if(error instanceof HttpException){
+        throw error;
+      }
+      this.logger.error('Error al activar la cuenta', error);
+      throw new InternalServerErrorException('Error al activar la cuenta');
+    }
+  }
+
+  async resendEmailVerification(email: string) {
+    try {
+      const user = await this.userRepository.findOneBy({ email });
+      
+      if(!user){
+        throw new NotFoundException(`User with email ${email} not found`);
+      }
+
+      if(user.isActive){
+        throw new BadRequestException('User account is already active');
+      }
+
+      const token = crypto.randomUUID();
+      
+      await this.emailVerificationService.create({ user, token });
+
+      const activationUrl = this.generateActivationUrl(token);
+
+      await this.sendEmailVerification(user.email, user.name, activationUrl);
+
+      return {
+        message: 'Correo de verificación reenviado exitosamente',
+      }
+
+    }  catch (error) {
+      if(error instanceof HttpException){
+        throw error;
+      }
+      this.logger.error('Error al reenviar el correo de verificación', error);
+      throw new InternalServerErrorException('Error al reenviar el correo de verificación');
+    }
   }
 
   async refreshToken(refresh_token: string) {
     try {
-      const refreshSecret = this.configService.get<string>('REFRESH_TOKEN_SECRET');
+      const refreshSecret = this.configService.get<string>(
+        'REFRESH_TOKEN_SECRET',
+      );
       const data = await this.jwtService.verifyAsync(refresh_token, {
         secret: refreshSecret,
       });
@@ -101,7 +210,9 @@ export class AuthService {
   }
 
   private generateRefreshToken(payload: any) {
-    const refreshSecret = this.configService.get<string>('REFRESH_TOKEN_SECRET');
+    const refreshSecret = this.configService.get<string>(
+      'REFRESH_TOKEN_SECRET',
+    );
     return this.jwtService.signAsync(payload, {
       secret: refreshSecret,
       expiresIn: '7d',
@@ -117,18 +228,20 @@ export class AuthService {
 
       // si es login con redes sociales no se puede cambiar la contraseña
       if (user.isSocialLogin) {
-        throw new BadRequestException('This user is connected with a social provider, this action is not allowed',);
+        throw new BadRequestException(
+          'This user is connected with a social provider, this action is not allowed',
+        );
       }
 
       // Invalidar tokens anteriores del usuario
       await this.passwordResetTokenRepository.update(
         { userId: user.id, isUsed: false },
-        { isUsed: true }
+        { isUsed: true },
       );
 
       // Generar nuevo token único (UUID)
       const tokenId = crypto.randomUUID();
-      
+
       // Crear fecha de expiración (1 hora desde ahora)
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 1);
@@ -158,14 +271,17 @@ export class AuthService {
       });
 
       return {
-        message: 'Se ha enviado un correo con las instrucciones para restablecer tu contraseña',
+        message:
+          'Se ha enviado un correo con las instrucciones para restablecer tu contraseña',
       };
     } catch (error) {
       this.logger.error('Error al enviar el correo de recuperación', error);
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new InternalServerErrorException('Error al enviar el correo de recuperación');
+      throw new InternalServerErrorException(
+        'Error al enviar el correo de recuperación',
+      );
     }
   }
 
@@ -174,9 +290,7 @@ export class AuthService {
    */
   validateResetToken(token: string) {
     try {
-      
       return this.findTokenAndValidate(token);
-
     } catch (error) {
       this.logger.error(error);
       throw error;
@@ -193,7 +307,7 @@ export class AuthService {
 
       // Actualizar la contraseña del usuario
       const user = resetToken.user;
-      user.password = encryptPassword(password);
+      user.password = encryptText(password);
       await this.userRepository.update(user.id, user);
 
       return {
@@ -205,40 +319,55 @@ export class AuthService {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new InternalServerErrorException('Error al restablecer la contraseña');
+      throw new InternalServerErrorException(
+        'Error al restablecer la contraseña',
+      );
     }
   }
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
     // Verificar que no sea usuario de redes sociales
     if (user.isSocialLogin) {
-      throw new BadRequestException('Los usuarios de redes sociales no pueden cambiar la contraseña')
+      throw new BadRequestException(
+        'Los usuarios de redes sociales no pueden cambiar la contraseña',
+      );
     }
 
     // Verificar contraseña actual
-    const isCurrentPasswordValid = verifyPassword(currentPassword, user.password);
+    const isCurrentPasswordValid = verifyEncryptedText(
+      currentPassword,
+      user.password,
+    );
     if (!isCurrentPasswordValid) {
       throw new BadRequestException('La contraseña actual es incorrecta');
     }
 
     // Verificar que la nueva contraseña sea diferente
-    const isSamePassword = verifyPassword(newPassword, user.password);
+    const isSamePassword = verifyEncryptedText(newPassword, user.password);
     if (isSamePassword) {
-      throw new BadRequestException('La nueva contraseña debe ser diferente a la actual');
+      throw new BadRequestException(
+        'La nueva contraseña debe ser diferente a la actual',
+      );
     }
 
     // Actualizar contraseña
-    user.password = encryptPassword(newPassword);
+    user.password = encryptText(newPassword);
     return this.userRepository.update(user.id, user);
   }
 
-  private async findTokenAndValidate(token: string){
+  private async findTokenAndValidate(token: string) {
     // Buscar el token en la base de datos
     const resetToken = await this.passwordResetTokenRepository.findOne({
       where: { id: token },
@@ -252,7 +381,7 @@ export class AuthService {
     // Verificar si el token es válido (no usado y no expirado)
     if (!resetToken.isValid()) {
       let message = 'El token de reseteo no es válido';
-      
+
       if (resetToken.isUsed) {
         message = 'Este token ya ha sido utilizado';
       } else if (resetToken.isExpired()) {
@@ -263,5 +392,26 @@ export class AuthService {
     }
 
     return resetToken;
+  }
+
+  private generateToken(payload: { id: string }) {
+    return this.jwtService.sign(payload);
+  }
+
+  private generateActivationUrl(token: string) {
+    return `${this.configService.get<string>('FRONTEND_URL')}/auth/activate?token=${token}`;
+  }
+
+  private sendEmailVerification(email: string, name: string, activationUrl: string) {
+    return this.mailerService.sendMail({
+        to: email,
+        from: '"My App" <no-reply@myapp.com>',
+        subject: 'Activa tu cuenta',
+        template: 'activation',
+        context: {
+          name,
+          activationUrl,
+        },
+      });
   }
 }

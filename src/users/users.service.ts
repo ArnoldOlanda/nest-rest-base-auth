@@ -5,7 +5,7 @@ import { PaginationDto } from './dto/pagination.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
 import { Repository } from 'typeorm';
-import { encryptPassword } from 'src/utils';
+import { encryptText } from 'src/utils';
 import { Role } from 'src/auth/entities/role.entity';
 
 @Injectable()
@@ -21,7 +21,7 @@ export class UsersService {
     try {
       const { password, ...rest } = createUserDto;
 
-      const encryptedPassword = encryptPassword(password);
+      const encryptedPassword = encryptText(password);
       const user = this.userRepository.create({
         ...rest,
         password: encryptedPassword,
