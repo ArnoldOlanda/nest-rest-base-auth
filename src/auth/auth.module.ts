@@ -11,6 +11,7 @@ import { RoleController } from './role.controller';
 import { PermissionController } from './permission.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PasswordResetToken } from './entities/passwordResetToken.entity';
@@ -32,7 +33,7 @@ import { EmailVerificationService } from './emailVerification.service';
         }),
     ],
     controllers: [AuthController, RoleController, PermissionController],
-    providers: [AuthService, JwtStrategy, RoleService, PermissionService, EmailVerificationService],
+    providers: [AuthService, JwtStrategy, GoogleStrategy, RoleService, PermissionService, EmailVerificationService],
     exports: [JwtStrategy],
 })
 export class AuthModule {}

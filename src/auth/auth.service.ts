@@ -13,7 +13,7 @@ import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
 import { encryptText, verifyEncryptedText } from 'src/utils';
-import { JwtPayload } from './interfaces';
+import { JwtPayload, SocialProviderUser } from './interfaces';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -128,6 +128,62 @@ export class AuthService {
         throw error;
       }
       throw new InternalServerErrorException('Error al registrar usuario');
+    }
+  }
+
+  async socialProviderSignIn(user: SocialProviderUser, res: Response) {
+    try {
+      const userExist = await this.userRepository.findOneBy({email:user.email});
+      if (!userExist) {
+        const newUser = this.userRepository.create({
+          name: user.firstName + ' ' + user.lastName,
+          email: user.email,
+          avatar: user.picture,
+          password: '',
+          isSocialLogin: true,
+          socialProvider: user.social_provider
+        });
+
+        if (!(newUser instanceof User)) {
+          throw new InternalServerErrorException('Error creating user');
+        }
+
+        const payload = { name: newUser.name, email: newUser.email };
+        const token = await this.jwtService.signAsync(payload);
+
+        return {
+          token,
+          user: newUser,
+          login: 'OK',
+        };
+      }
+
+      //Update social provider
+      userExist.socialProvider = user.social_provider;
+      await this.userRepository.update(userExist.id, userExist);
+
+      const payload: JwtPayload = { 
+        id: userExist.id, 
+        name: userExist.name, 
+        email: userExist.email 
+      };
+      const token = await this.jwtService.signAsync(payload);
+      const refreshToken = await this.generateRefreshToken(payload);
+
+      res.cookie('refresh_token', refreshToken, {
+        httpOnly: true,
+        secure: this.configService.get<string>('NODE_ENV') === 'production',
+        sameSite: this.configService.get<string>('NODE_ENV') === 'production' ? 'none' : 'lax',
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 días
+      });
+
+      return {
+        token,
+        user: userExist,
+        status: 'success',
+      };
+    } catch (error) {
+      throw error;
     }
   }
 
