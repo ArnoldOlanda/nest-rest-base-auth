@@ -11,7 +11,7 @@ import { Permission } from 'src/auth/entities/permission.entity';
 import { EmailVerification } from 'src/auth/entities/emailVerification.entity';
 import { PasswordResetToken } from 'src/auth/entities/passwordResetToken.entity';
 
-describe('UsersService (con DB real)', () => {
+describe('UsersService unit test', () => {
   let service: UsersService;
   let dataSource: DataSource;
   let module: TestingModule;
