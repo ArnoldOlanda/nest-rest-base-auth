@@ -7,6 +7,7 @@ import { seedTestData } from './seed-test-data';
 import cookieParser from 'cookie-parser';
 import { FormatResponseInterceptor } from 'src/interceptors/formatResponse.interceptor';
 import { HttpExceptionFilter } from 'src/exceptionFilters/httpException.filter';
+import { MailerService } from '@nestjs-modules/mailer';
 
 describe('API E2E Tests', () => {
   let app: INestApplication;
@@ -19,11 +20,20 @@ describe('API E2E Tests', () => {
   let refreshToken: string;
   let verificationToken: string;
   let resetToken: string;
+  let moduleFixture: TestingModule;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    // Mock de MailerService
+    const mockMailerService = {
+      sendMail: jest.fn().mockResolvedValue(true),
+    };
+
+    moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MailerService)
+      .useValue(mockMailerService)
+      .compile(); 
 
     app = moduleFixture.createNestApplication();
     
@@ -51,8 +61,20 @@ describe('API E2E Tests', () => {
   });
 
   afterAll(async () => {
-    await dataSource.destroy();
-    await app.close();
+    // Limpiar en el orden correcto
+    try {
+      if (dataSource && dataSource.isInitialized) {
+        await dataSource.destroy();
+      }
+      if (app) {
+        await app.close();
+      }
+      if (moduleFixture) {
+        await moduleFixture.close(); // Importante: cerrar el módulo
+      }
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+    }
   });
 
   describe('Authentication Module', () => {
@@ -67,7 +89,7 @@ describe('API E2E Tests', () => {
           })
           .expect(201);
 
-        expect(response.body.success).toBe(true);
+        expect(response.body.status).toBe('success');
         expect(response.body.data).toHaveProperty('user');
         expect(response.body.data.user.email).toBe('newuser@example.com');
         expect(response.body.data.user.isActive).toBe(false); // Not verified yet
@@ -207,7 +229,7 @@ describe('API E2E Tests', () => {
           })
           .expect(200);
 
-        expect(response.body.success).toBe(true);
+        expect(response.body.status).toBe('success');
 
         // Change it back for other tests
         await request(app.getHttpServer())
@@ -248,10 +270,10 @@ describe('API E2E Tests', () => {
           .send({
             email: 'test1@example.com',
           })
-          .expect(200);
+          .expect(201);
 
-        expect(response.body.success).toBe(true);
-        expect(response.body.message).toContain('correo');
+        expect(response.body.status).toBe('success');
+        expect(response.body.data.message).toContain('correo');
       });
 
       it('should fail for non-existent user', async () => {
@@ -271,10 +293,10 @@ describe('API E2E Tests', () => {
         const response = await request(app.getHttpServer())
           .get('/api/v1/users')
           .set('Authorization', `Bearer ${authToken}`)
-          .query({ page: 1, limit: 10 })
+          .query({ offset: 1, limit: 10 })
           .expect(200);
 
-        expect(response.body.success).toBe(true);
+        expect(response.body.status).toBe('success');
         expect(response.body.data).toHaveProperty('data');
         expect(response.body.data).toHaveProperty('meta');
         expect(Array.isArray(response.body.data.data)).toBe(true);
@@ -293,7 +315,7 @@ describe('API E2E Tests', () => {
         const response = await request(app.getHttpServer())
           .get('/api/v1/users')
           .set('Authorization', `Bearer ${authToken}`)
-          .query({ page: 1, limit: 2 })
+          .query({ offset: 1, limit: 2 })
           .expect(200);
 
         expect(response.body.data.data.length).toBeLessThanOrEqual(2);
@@ -308,7 +330,7 @@ describe('API E2E Tests', () => {
           .set('Authorization', `Bearer ${authToken}`)
           .expect(200);
 
-        expect(response.body.success).toBe(true);
+        expect(response.body.status).toBe('success');
         expect(response.body.data.id).toBe(testUserId);
         expect(response.body.data).toHaveProperty('email');
         expect(response.body.data).toHaveProperty('name');

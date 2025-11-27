@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -97,7 +98,7 @@ export class AuthService {
       // Verificar si el usuario ya existe
       const existingUser = await this.userRepository.findOneBy({ email });
       if (existingUser) {
-        throw new BadRequestException('El usuario ya está registrado');
+        throw new ConflictException('El usuario ya está registrado');
       }
 
       // Crear usuario inactivo

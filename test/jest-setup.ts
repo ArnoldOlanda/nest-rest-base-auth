@@ -15,3 +15,22 @@ jest.mock('uuid', () => ({
   v5: jest.fn(() => generateUUID()),
 }));
 
+// Mock HandlebarsAdapter to avoid native module loading issues
+jest.mock('@nestjs-modules/mailer/dist/adapters/handlebars.adapter', () => ({
+  HandlebarsAdapter: jest.fn().mockImplementation(() => ({
+    compile: jest.fn(),
+  })),
+}));
+
+// Mock passport-google-oauth20 to avoid OAuth2Strategy initialization issues
+jest.mock('passport-google-oauth20', () => {
+  const mockStrategy = jest.fn().mockImplementation(function(options, verify) {
+    this.name = 'google';
+    this.authenticate = jest.fn();
+  });
+  
+  return {
+    Strategy: mockStrategy,
+  };
+});
+

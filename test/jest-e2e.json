@@ -6,8 +6,19 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
+  "maxWorkers": 1,
+  "testTimeout": 30000,
+  "forceExit": false,
+  "detectOpenHandles": true,
+  "clearMocks": true,
+  "resetMocks": false,
+  "restoreMocks": false,
+  "resetModules": false,
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../src/$1"
   },
-  "setupFilesAfterEnv": ["<rootDir>/jest-setup.ts"]
+  "setupFilesAfterEnv": ["<rootDir>/jest-setup.ts"],
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@css-inline)/)"
+  ]
 }

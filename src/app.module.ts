@@ -15,7 +15,7 @@ import { QueueModule } from './queue/queue.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: `.env.${process.env.NODE_ENV || 'dev'}`,
     }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
