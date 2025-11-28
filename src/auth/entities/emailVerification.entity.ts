@@ -1,5 +1,5 @@
-import { User } from "src/users/entities/user.entity";
-import { BeforeInsert, Column, CreateDateColumn, DeleteDateColumn, Entity, ManyToOne, PrimaryColumn, UpdateDateColumn } from "typeorm";
+import { User } from "../../../src/users/entities/user.entity";
+import { BeforeInsert, Column, CreateDateColumn, Entity, ManyToOne, PrimaryColumn, UpdateDateColumn } from "typeorm";
 import {v4 as uuid} from 'uuid'
 
 @Entity('email_verifications')

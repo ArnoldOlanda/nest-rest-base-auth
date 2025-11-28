@@ -1,6 +1,26 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: nest-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nest_db}
+      POSTGRES_USER: ${DB_USER:-nest_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nest_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-nest_user} -d ${DB_NAME:-nest_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nest-network
+
   redis:
     image: redis:7-alpine
+    container_name: nest-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -8,3 +28,51 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - nest-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nest-app
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-nest_user}
+      - DB_PASSWORD=${DB_PASSWORD:-nest_password}
+      - DB_NAME=${DB_NAME:-nest_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - THROTTLE_TTL=${THROTTLE_TTL:-60000}
+      - THROTTLE_LIMIT=${THROTTLE_LIMIT:-10}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nest-network
+    restart: unless-stopped
+
+networks:
+  nest-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: nest_rest_base_pgdata
