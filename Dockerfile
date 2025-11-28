@@ -29,11 +29,15 @@ WORKDIR /app
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-# Install only production dependencies
-RUN pnpm install --prod --frozen-lockfile
+# Install all dependencies (including dev dependencies for migrations)
+RUN pnpm install --frozen-lockfile
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
+
+# Copy source files (needed for TypeORM migrations with ts-node)
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Expose the application port
 EXPOSE 3000

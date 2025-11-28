@@ -1,5 +1,5 @@
-import { EmailVerification } from "../../../src/auth/entities/emailVerification.entity";
-import { Role } from "../../../src/auth/entities/role.entity";
+import { EmailVerification } from "../../auth/entities/emailVerification.entity";
+import { Role } from "../../auth/entities/role.entity";
 import { BeforeInsert, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinTable, ManyToMany, OneToMany, PrimaryColumn, UpdateDateColumn } from "typeorm";
 import {v4 as uuid} from 'uuid'
 
